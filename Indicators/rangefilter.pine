@@ -1,0 +1,156 @@
+//@version=6
+strategy(title="Range Filter Buy and Sell [Strategy]", overlay=true, commission_type=strategy.commission.percent, commission_value=0.025, default_qty_type=strategy.cash, default_qty_value=10000, initial_capital=10000, slippage=0)
+
+// === INPUT BACKTEST RANGE ===
+useDate = input.bool(true, title='---------------- Use Date ----------------')
+FromMonth = input.int(defval=7, title="From Month", minval=1, maxval=12)
+FromDay = input.int(defval=25, title="From Day", minval=1, maxval=31)
+FromYear = input.int(defval=2024, title="From Year", minval=2017)
+ToMonth = input.int(defval=1, title="To Month", minval=1, maxval=12)
+ToDay = input.int(defval=1, title="To Day", minval=1, maxval=31)
+ToYear = input.int(defval=9999, title="To Year", minval=2017)
+start = timestamp(FromYear, FromMonth, FromDay, 00, 00)  // backtest start window
+finish = timestamp(ToYear, ToMonth, ToDay, 23, 59)        // backtest finish window
+window() => time >= start and time <= finish ? true : false // create function "within window of time"
+// === INPUT BACKTEST RANGE ===
+
+// Define resistance and support variables
+var float resistance = na
+var float support = na
+
+// Define pivot high and low
+pivot_high = ta.pivothigh(high, 5, 5)
+pivot_low = ta.pivotlow(low, 5, 5)
+
+// Update resistance and support when new pivot high/low is detected
+resistance := na(pivot_high) ? resistance[1] : pivot_high
+support := na(pivot_low) ? support[1] : pivot_low
+
+plot(resistance, color=color.red, linewidth=1, title="Resistance Level")  // Plot resistance level
+plot(support, color=color.green, linewidth=1, title="Support Level")      // Plot support level
+// === SUPPORT AND RESISTANCE LEVELS ===
+
+// === MOVING AVERAGES FOR TREND CONFIRMATION ===
+short_ma = ta.sma(close, 20)  // 20-period simple moving average 
+long_ma = ta.sma(close, 50)   // 50-period simple moving average
+plot(short_ma, color=color.blue, linewidth=1, title="Short-term MA")  // Plot short-term moving average
+plot(long_ma, color=color.orange, linewidth=1, title="Long-term MA")  // Plot long-term moving average
+// === MOVING AVERAGES FOR TREND CONFIRMATION ===
+
+// === CANDLESTICK PATTERN RECOGNITION ===
+bullish_engulfing = close > open and close[1] < open[1] and close >= open[1] and open <= close[1]  // Define bullish engulfing
+bearish_engulfing = close < open and close[1] > open[1] and close <= open[1] and open >= close[1]  // Define bearish engulfing
+// === CANDLESTICK PATTERN RECOGNITION ===
+
+// === EXISTING STRATEGY LOGIC ===
+// Retain any prior filters or calculations you want to integrate
+// [Optional: Include pre-existing Range Filter logic or price-based conditions here]
+// === EXISTING STRATEGY LOGIC ===
+
+// === TRADE CONDITIONS WITH PRICE ACTION ===
+longCondition = bullish_engulfing and close > short_ma and short_ma > long_ma and close > support and window()  // Long entry condition
+shortCondition = bearish_engulfing and close < short_ma and short_ma < long_ma and close < resistance and window()  // Short entry condition
+
+if (longCondition)
+    strategy.entry("Long", strategy.long, comment="Long Entry")  // Execute long trades based on longCondition
+
+if (shortCondition)
+    strategy.entry("Short", strategy.short, comment="Short Entry")  // Execute short trades based on shortCondition
+// === TRADE CONDITIONS WITH PRICE ACTION ===
+
+// === STOP LOSS AND TAKE PROFIT ===
+useStopLoss = input.bool(false, title='----- Use Stop Loss / Take profit -----')
+sl_inp = input.float(100, title='Stop Loss %', step=0.25) / 100
+tp_inp = input.float(1.5, title='Take Profit %', step=0.25) / 100
+stop_level = strategy.position_avg_price * (1 - sl_inp)  // Stop-loss level for long trades
+take_level = strategy.position_avg_price * (1 + tp_inp)  // Take-profit level for long trades
+stop_level_short = strategy.position_avg_price * (1 + sl_inp)  // Stop-loss level for short trades
+take_level_short = strategy.position_avg_price * (1 - tp_inp)  // Take-profit level for short trades
+
+if (useStopLoss)  // Exit strategy if stop-loss/take-profit is enabled
+    strategy.exit("Stop Loss/Profit Long", "Long", stop=stop_level, limit=take_level)
+    strategy.exit("Stop Loss/Profit Short", "Short", stop=stop_level_short, limit=take_level_short)
+// === STOP LOSS AND TAKE PROFIT ===
+
+// === RANGE FILTER LOGIC ===
+sources = input(defval=close, title="Source")
+isHA = input.bool(false, "Use HA Candles")
+
+// Calculate Heikin-Ashi candles
+var float haOpen = na
+haClose = (open + high + low + close) / 4
+haOpen := na(haOpen[1]) ? (open + close) / 2 : (haOpen[1] + haClose[1]) / 2
+haHigh = math.max(high, math.max(haClose, haOpen))
+haLow = math.min(low, math.min(haClose, haOpen))
+
+src = isHA ? request.security(syminfo.tickerid, timeframe.period, haClose) : sources
+
+// Sampling Period
+per = input.int(defval=50, minval=1, title="Sampling Period")
+
+// Range Multiplier
+mult = input.float(defval=3.0, minval=0.1, title="Range Multiplier")
+
+// Smooth Average Range
+smoothrng(x, t, m)=>
+    wper = (t * 2) - 1
+    avrng = ta.ema(math.abs(x - x[1]), t)
+    smoothrng = ta.ema(avrng, wper) * m
+    smoothrng
+smrng = smoothrng(src, per, mult)
+
+// Range Filter
+rngfilt(x, r)=>
+    rngfilt = x
+    rngfilt := x > nz(rngfilt[1]) ? ((x - r) < nz(rngfilt[1]) ? nz(rngfilt[1]) : (x - r)) : ((x + r) > nz(rngfilt[1]) ? nz(rngfilt[1]) : (x + r))
+    rngfilt
+filt = rngfilt(src, smrng)
+
+// Filter Direction
+var float upward = 0.0
+upward := filt > filt[1] ? nz(upward[1]) + 1 : filt < filt[1] ? 0 : nz(upward[1])
+var float downward = 0.0
+downward := filt < filt[1] ? nz(downward[1]) + 1 : filt > filt[1] ? 0 : nz(downward[1])
+
+// Target Bands
+hband = filt + smrng
+lband = filt - smrng
+
+// Colors
+filtcolor = upward > 0 ? color.lime : downward > 0 ? color.red : color.orange
+barcolor = (src > filt) and (src > src[1]) and (upward > 0) ? color.lime : (src > filt) and (src < src[1]) and (upward > 0) ? color.green :
+   (src < filt) and (src < src[1]) and (downward > 0) ? color.red : (src < filt) and (src > src[1]) and (downward > 0) ? color.maroon : color.orange
+
+filtplot = plot(filt, color=filtcolor, linewidth=3, title="Range Filter")
+
+// Target
+hbandplot = plot(hband, color=color.lime, title="High Target")
+lbandplot = plot(lband, color=color.red, title="Low Target")
+
+// Fills
+fill(hbandplot, filtplot, color=color.lime, title="High Target Range")
+fill(lbandplot, filtplot, color=color.red, title="Low Target Range")
+
+// Bar Color
+//barcolor(barcolor)
+
+// Break Outs
+var bool rangeLongCond = false
+var bool rangeShortCond = false
+rangeLongCond := ((src > filt) and (src > src[1]) and (upward > 0)) or ((src > filt) and (src < src[1]) and (upward > 0))
+rangeShortCond := ((src < filt) and (src < src[1]) and (downward > 0)) or ((src < filt) and (src > src[1]) and (downward > 0))
+
+var int CondIni = 0
+CondIni := rangeLongCond ? 1 : rangeShortCond ? -1 : CondIni[1]
+rangeLongCondition = rangeLongCond and CondIni[1] == -1
+rangeShortCondition = rangeShortCond and CondIni[1] == 1
+
+// Alerts
+plotshape(rangeLongCondition, title="Buy Signal", text="BUY", textcolor=color.white, style=shape.labelup, size=size.normal, location=location.belowbar, color=color.green)
+plotshape(rangeShortCondition, title="Sell Signal", text="SELL", textcolor=color.white, style=shape.labeldown, size=size.normal, location=location.abovebar, color=color.red)
+
+// Strategy Entries
+if rangeLongCondition and window()
+    strategy.entry("Long", strategy.long, comment="Long")
+if rangeShortCondition and window()
+    strategy.entry("Short", strategy.short, comment="Short")
