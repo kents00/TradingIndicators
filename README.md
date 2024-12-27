@@ -5,6 +5,7 @@ This project contains a collection of custom trading indicators designed to help
 
 ## Indicators
 ### Range Filter Buy and Sell [Strategy]
+![BTCUSD_2024-12-27_13-45-25](https://github.com/user-attachments/assets/41d7e014-2705-4372-ace1-557168f70e0d)
 The `Range Filter Buy and Sell [Strategy]` indicator is designed to identify potential buy and sell signals based on a range filter logic. It combines support and resistance levels, moving averages, and candlestick pattern recognition to generate trading signals. The main features include:
 - **Support and Resistance Levels**: Identifies key support and resistance levels based on pivot highs and lows.
 - **Moving Averages**: Uses 20-period and 50-period simple moving averages to confirm trends.
